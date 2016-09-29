@@ -41,6 +41,7 @@ const int GO_DOWN = 3;
 #define SENSORS_START           A1
 
 unsigned int sensorValues[NUM_SENSORS];
+bool timeOnWhite[NUM_SENSORS];
 long sensorLastPositionValue = 0;
 
 //--------------------------------------------------
@@ -75,9 +76,9 @@ const long GREEN_CHECK_INTERVAL = 1000;
 //--------------------------------------------------
 // Buttons
 
-const int OBSTC_BUTTON_PIN = 7;
-const int LEFT_BUTTON_PIN = 3;
-const int RIGHT_BUTTON_PIN = 4;
+const int RIGHT_BUTTON_PIN = 3;
+const int LEFT_BUTTON_PIN = 4;
+const int OBSTC_BUTTON_PIN = 5;
 
 //--------------------------------------------------
 // Ultrasonic Sensors
@@ -106,6 +107,11 @@ int moves[2][9] = {
 };
 
 //--------------------------------------------------
+// Gaps logic
+
+boolean onGap = false;
+
+//--------------------------------------------------
 // Rescue mode
 
 bool rescueMode = false;
@@ -119,7 +125,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              0
+#define CALIBRATION              1
 
 //--------------------------------------------------
 
@@ -175,6 +181,7 @@ void readSensors(boolean d) {
   boolean debug = d || false;
   for (int i = 0; i < NUM_SENSORS; i++) {
     sensorValues[i] = analogRead(SENSORS_START + i);
+    if (sensorValues[i] <= BLACK_VALUE) timeOnWhite[i] = millis() + 2000;
     if (debug) {
       Serial.print(sensorValues[i]);
       Serial.print('\t');
@@ -292,6 +299,14 @@ boolean isAllWhite() {
   return !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5) && !isBlack(6);
 }
 
+boolean foundGap() {
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    if (timeOnWhite[i] <= millis())
+      return true;
+  }
+  return false;
+}
+
 void performObstacleEvade() {
   moveRobot(BACK);
   delay(600);
@@ -386,10 +401,21 @@ void loop() {
     return;
   }
 
+  if (foundGap()) {
+    moveRobot(BACK);
+    delay(2500);
+    moveRobot(STOP);
+    delay(90000);
+  }
+
+  /*
+
   if (digitalRead(OBSTC_BUTTON_PIN) == LOW) {
     Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
   }
+
+  */
 
   readAllSensors();
 
