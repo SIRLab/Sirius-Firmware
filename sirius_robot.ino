@@ -38,10 +38,9 @@ const int GO_DOWN = 3;
 
 #define BLACK_VALUE             700
 #define NUM_SENSORS             6
-#define SENSORS_START           A1
 
+unsigned int sensorPins[NUM_SENSORS] = { A0, A1, A2, A3, A4, A5 };
 unsigned int sensorValues[NUM_SENSORS];
-bool timeOnWhite[NUM_SENSORS];
 long sensorLastPositionValue = 0;
 
 //--------------------------------------------------
@@ -69,9 +68,6 @@ int colorSensors[2][5] = {
 boolean gotGreen[2] = { false, false };
 boolean needTurnLeft = false;
 boolean needTurnRight = false;
-
-long greenCheckTick[2] = { 0, 0 };
-const long GREEN_CHECK_INTERVAL = 1000;
 
 //--------------------------------------------------
 // Buttons
@@ -107,11 +103,6 @@ int moves[2][9] = {
 };
 
 //--------------------------------------------------
-// Gaps logic
-
-boolean onGap = false;
-
-//--------------------------------------------------
 // Rescue mode
 
 bool rescueMode = false;
@@ -125,7 +116,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              1
+#define CALIBRATION              2
 
 //--------------------------------------------------
 
@@ -180,15 +171,17 @@ int readUltrasonicDistance(int sensorId) {
 void readSensors(boolean d) {
   boolean debug = d || false;
   for (int i = 0; i < NUM_SENSORS; i++) {
-    sensorValues[i] = analogRead(SENSORS_START + i);
-    if (sensorValues[i] <= BLACK_VALUE) timeOnWhite[i] = millis() + 2000;
+    sensorValues[i] = analogRead(sensorPins[i]);
     if (debug) {
       Serial.print(sensorValues[i]);
       Serial.print('\t');
     }
   }
-  if (debug)
+  
+  if (debug) {
     Serial.println();
+    delay(200);
+  }
   /**/
 }
 
@@ -214,13 +207,13 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     digitalWrite(colorSensors[i][S2], HIGH);
     green = pulseIn(out, digitalRead(out) == HIGH ? LOW : HIGH);
 
-    if (red > green && red > blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
-      if (greenCheckTick[i] <= millis()) {
-        Serial.print("GOT GREEN!"); // 98 - 64 - 84
-        Serial.println(i);
-        gotGreen[i] = true;
-        greenCheckTick[i] = millis() + GREEN_CHECK_INTERVAL;
-      }
+    int greenRedDifference = abs(green - red);
+    int greenBlueDifference = abs(green - blue);
+
+    if (greenRedDifference < 30 && greenBlueDifference < 20 && green > red && green > blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
+      Serial.print("GOT GREEN!"); // 98 - 64 - 84
+      Serial.println(i);
+      gotGreen[i] = true;
     } else {
       gotGreen[i] = false;
     }
@@ -234,6 +227,7 @@ void readColorSensors(boolean d, int start, int maxIndex) {
       Serial.print(green, DEC);
       Serial.print(" B Intensity : ");
       Serial.println(blue, DEC);
+      delay(100);
     }
   }
   /**/
@@ -284,55 +278,40 @@ boolean isCenterBlack() {
 }
 
 boolean got90Right() {
-  return isBlack(4) && isBlack(5) && isBlack(6);
+  return isBlack(3) && isBlack(4) && isBlack(5);
 }
 
 boolean got90Left() {
-  return isBlack(1) && isBlack(2) && isBlack(3);
+  return isBlack(0) && isBlack(1) && isBlack(2);
 }
 
 boolean isAllBlack() {
-  return isBlack(1) && isBlack(2) && isBlack(3) && isBlack(4) && isBlack(5) && isBlack(6);
+  return isBlack(0) && isBlack(1) && isBlack(2) && isBlack(3) && isBlack(4) && isBlack(5);
 }
 
 boolean isAllWhite() {
-  return !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5) && !isBlack(6);
-}
-
-boolean foundGap() {
-  for (int i = 0; i < NUM_SENSORS; i++) {
-    if (timeOnWhite[i] <= millis())
-      return true;
-  }
-  return false;
+  return !isBlack(0) && !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5);
 }
 
 void performObstacleEvade() {
   moveRobot(BACK);
-  delay(600);
+  delay(500);
   moveRobot(RIGHT);
-  delay(1000);
+  delay(2100);
   moveRobot(FRONT);
-  delay(1650);
+  delay(1700);
   moveRobot(LEFT);
-  delay(950);
+  delay(2400);
   moveRobot(FRONT);
-  delay(1950);
+  delay(4500);
   moveRobot(LEFT);
-  delay(1000);
+  delay(2100);
   moveRobot(FRONT);
-  delay(350);
-  boolean k = true;
-  while (k) {
-    readSensors(false);
-    if (isBlack(4)) {
-      moveRobot(RIGHT);
-      delay(200);
-      k = false;
-    }
-  }
-  Serial.println("Finished obstacle");
-  moveRobot(STOP);
+  delay(2000);
+  moveRobot(RIGHT);
+  delay(1800);
+  moveRobot(BACK);
+  delay(2000);
 }
 
 void processRescueMode() {
@@ -400,24 +379,13 @@ void loop() {
     processRescueMode();
     return;
   }
+  
+  readAllSensors();
 
-  if (foundGap()) {
-    moveRobot(BACK);
-    delay(2500);
-    moveRobot(STOP);
-    delay(90000);
-  }
-
-  /*
-
-  if (digitalRead(OBSTC_BUTTON_PIN) == LOW) {
+  if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
     Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
   }
-
-  */
-
-  readAllSensors();
 
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
     moveRobot(FRONT);
