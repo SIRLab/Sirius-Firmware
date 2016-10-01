@@ -48,9 +48,11 @@ long sensorLastPositionValue = 0;
 
 #define USE_COLOR_SENSORS        true
 
-#define RED_MINIMUM              60 // 60
-#define GREEN_MINIMUM            45 // 45
-#define BLUE_MINIMUM             40 //  40
+#define RED_MINIMUM              50
+#define GREEN_MINIMUM            45
+#define BLUE_MINIMUM             40
+
+#define RED_GREEN_DIFFERENCE     40
 
 const int CS_ESQ = 0;
 const int CS_DIR = 1;
@@ -116,7 +118,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              2
+#define CALIBRATION              false
 
 //--------------------------------------------------
 
@@ -207,10 +209,13 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     digitalWrite(colorSensors[i][S2], HIGH);
     green = pulseIn(out, digitalRead(out) == HIGH ? LOW : HIGH);
 
+    int redGreenDifference = red - green;
+
+    red = red - (start == 1 ? RED_GREEN_DIFFERENCE : 0);
     int greenRedDifference = abs(green - red);
     int greenBlueDifference = abs(green - blue);
 
-    if (greenRedDifference < 30 && greenBlueDifference < 20 && green > red && green > blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
+    if (greenRedDifference < 30 && greenBlueDifference < 20 && green >= red && green >= blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
       Serial.print("GOT GREEN!"); // 98 - 64 - 84
       Serial.println(i);
       gotGreen[i] = true;
@@ -226,7 +231,10 @@ void readColorSensors(boolean d, int start, int maxIndex) {
       Serial.print(" G Intensity: ");
       Serial.print(green, DEC);
       Serial.print(" B Intensity : ");
-      Serial.println(blue, DEC);
+      Serial.print(blue, DEC);
+      Serial.print('\t');
+      Serial.print("Red & Green Difference: ");
+      Serial.println(redGreenDifference, DEC);
       delay(100);
     }
   }
@@ -362,14 +370,54 @@ void setup() {
 }
 
 void loop() {
-  if (CALIBRATION == 1) {
-    readSensors(true);
-    return;
-  } else if (CALIBRATION == 2) {
-    readColorSensors(true, 0, 1);
-    return;
-  } else if (CALIBRATION == 3) {
-    readColorSensors(true, 1, 2);
+  moveRobot(FRONT);
+  return;
+  if (CALIBRATION) {
+    char commandByte = '*';
+
+    Serial.println("===== Calibration =====");
+    Serial.println("Choose an option");
+    Serial.println(" - (I)R Sensors");
+    Serial.println(" - (C)olor Sensors");
+    
+    while (Serial.available() == 0);
+    commandByte = Serial.read();
+
+    if (commandByte == 'i' || commandByte == 'I') {
+      commandByte = '*';
+      while (commandByte != 'x') {
+        readSensors(true);
+        if (Serial.available()) {
+          commandByte = Serial.read();
+        }
+      }
+    } else if (commandByte == 'c' || commandByte == 'C') {
+      commandByte = '*';
+      while (commandByte != 'x') {
+        Serial.println("Choose a side");
+        Serial.println(" - (L)eft Sensors");
+        Serial.println(" - (R)ight Sensors");
+        while (Serial.available() == 0);
+        commandByte = Serial.read();
+        if (commandByte == 'l' || commandByte == 'L') {
+          while (commandByte != 'x') {
+            readColorSensors(true, 0, 1);
+            if (Serial.available()) {
+              commandByte = Serial.read();
+            }
+          }
+          commandByte = '*';
+        } else if (commandByte == 'r' || commandByte == 'R') {
+          while (commandByte != 'x') {
+            readColorSensors(true, 1, 2);
+            if (Serial.available()) {
+              commandByte = Serial.read();
+            }
+          }
+          commandByte = '*';
+        }
+      }
+    }
     return;
   }
 
