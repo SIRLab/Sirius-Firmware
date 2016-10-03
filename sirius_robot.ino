@@ -118,7 +118,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              false
+#define CALIBRATION              true
 
 //--------------------------------------------------
 
@@ -130,13 +130,13 @@ void moveRobot(int moveId) {
 void clawMove(int cMove) {
   switch (cMove) {
     case OPEN:
-      clawServos[CLAW].write(110);
+      clawServos[CLAW].write(80);
       break;
     case CLOSE:
       clawServos[CLAW].write(0);
       break;
     case GO_UP:
-      clawServos[HEIGHT].write(180);
+      clawServos[HEIGHT].write(165);
       break;
     case GO_DOWN:
       clawServos[HEIGHT].write(60);
@@ -145,7 +145,7 @@ void clawMove(int cMove) {
 }
 
 void clawInit() {
-  clawMove(OPEN);
+  clawMove(CLOSE);
   clawMove(GO_UP);
 }
 
@@ -339,11 +339,11 @@ void setup() {
 
   // Color sensors setup
   for (int i = 0; i < 2; i++) {
-    pinMode(colorSensors[i][S0], OUTPUT);
-    pinMode(colorSensors[i][S1], OUTPUT);
-    pinMode(colorSensors[i][S2], OUTPUT);
-    pinMode(colorSensors[i][S3], OUTPUT);
-    pinMode(colorSensors[i][OUT], INPUT);
+    pinMode(colorSensors[i][S0],      OUTPUT);
+    pinMode(colorSensors[i][S1],      OUTPUT);
+    pinMode(colorSensors[i][S2],      OUTPUT);
+    pinMode(colorSensors[i][S3],      OUTPUT);
+    pinMode(colorSensors[i][OUT],     INPUT);
     digitalWrite(colorSensors[i][S0], HIGH);
     digitalWrite(colorSensors[i][S1], LOW);
   }
@@ -370,8 +370,6 @@ void setup() {
 }
 
 void loop() {
-  moveRobot(FRONT);
-  return;
   if (CALIBRATION) {
     char commandByte = '*';
 
