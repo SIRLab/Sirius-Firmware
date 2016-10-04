@@ -36,7 +36,7 @@ const int GO_DOWN = 3;
 //--------------------------------------------------
 // IR Sensors
 
-#define BLACK_VALUE             700
+#define BLACK_VALUE             500
 #define NUM_SENSORS             6
 
 unsigned int sensorPins[NUM_SENSORS] = { A0, A1, A2, A3, A4, A5 };
@@ -52,8 +52,9 @@ long sensorLastPositionValue = 0;
 #define GREEN_MINIMUM            45
 #define BLUE_MINIMUM             40
 
-#define RED_GREEN_DIFFERENCE     40
-
+const int RED = 0;
+const int GREEN = 1;
+const int BLUE = 2;
 const int CS_ESQ = 0;
 const int CS_DIR = 1;
 const int S0 = 0;
@@ -62,12 +63,18 @@ const int S2 = 2;
 const int S3 = 3;
 const int OUT = 4;
 
-int colorSensors[2][5] = {
+unsigned int silverTape[2][3] = {
+  { 34, 44, 34 },
+  { 40, 40, 31 }
+};
+
+unsigned int colorSensors[2][5] = {
   {23, 25, 24, 27, 26},
   {51, 50, 49, 48, 47}
 };
 
 boolean gotGreen[2] = { false, false };
+boolean gotSilverTape[2] = { false, false };
 boolean needTurnLeft = false;
 boolean needTurnRight = false;
 
@@ -118,7 +125,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              true
+#define CALIBRATION              false
 
 //--------------------------------------------------
 
@@ -130,7 +137,7 @@ void moveRobot(int moveId) {
 void clawMove(int cMove) {
   switch (cMove) {
     case OPEN:
-      clawServos[CLAW].write(80);
+      clawServos[CLAW].write(90);
       break;
     case CLOSE:
       clawServos[CLAW].write(0);
@@ -145,7 +152,7 @@ void clawMove(int cMove) {
 }
 
 void clawInit() {
-  clawMove(CLOSE);
+  clawMove(OPEN);
   clawMove(GO_UP);
 }
 
@@ -187,15 +194,17 @@ void readSensors(boolean d) {
   /**/
 }
 
+boolean inRange(int value, int equalsTo, int margin) {
+  return equalsTo >= (value - margin) && (value + margin) >= equalsTo;
+}
+
 void readColorSensors(boolean d, int start, int maxIndex) {
   if (!USE_COLOR_SENSORS) {
     return;
   }
   boolean debug = d || false;
   for (int i = start; i < maxIndex; i++) {
-    int red = 0;
-    int green = 0;
-    int blue = 0;
+    int red = 0, green = 0, blue = 0;
 
     int out = colorSensors[i][OUT];
 
@@ -210,27 +219,34 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     green = pulseIn(out, digitalRead(out) == HIGH ? LOW : HIGH);
 
     int redGreenDifference = red - green;
-
-    red = red - (start == 1 ? RED_GREEN_DIFFERENCE : 0);
     int greenRedDifference = abs(green - red);
     int greenBlueDifference = abs(green - blue);
 
     if (greenRedDifference < 30 && greenBlueDifference < 20 && green >= red && green >= blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
-      Serial.print("GOT GREEN!"); // 98 - 64 - 84
+      Serial.print("GOT GREEN!");
       Serial.println(i);
       gotGreen[i] = true;
     } else {
       gotGreen[i] = false;
     }
 
+    if (inRange(red, silverTape[i][RED], 5) && inRange(green, silverTape[i][GREEN], 5) && inRange(blue, silverTape[i][BLUE], 5)) {
+      Serial.print("GOT SILVER TAPE!");
+      Serial.println(i);
+      debug = true;
+      gotSilverTape[i] = true;
+    } else {
+      gotSilverTape[i] = false;
+    }
+
     if (debug) {
       const char* sName = i == CS_ESQ ? "=== SENSOR ESQ ===" : "=== SENSOR DIR ===";
       //Serial.println(sName);
-      Serial.print("R Intensity:");
+      Serial.print("R: ");
       Serial.print(red, DEC);
-      Serial.print(" G Intensity: ");
+      Serial.print(" G: ");
       Serial.print(green, DEC);
-      Serial.print(" B Intensity : ");
+      Serial.print(" B: ");
       Serial.print(blue, DEC);
       Serial.print('\t');
       Serial.print("Red & Green Difference: ");
@@ -299,6 +315,10 @@ boolean isAllBlack() {
 
 boolean isAllWhite() {
   return !isBlack(0) && !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5);
+}
+
+boolean onSilverTape() {
+  return gotSilverTape[0] && gotSilverTape[1];
 }
 
 void performObstacleEvade() {
@@ -427,6 +447,11 @@ void loop() {
   }
   
   readAllSensors();
+
+  if (isAllWhite() && onSilverTape()) {
+    moveRobot(STOP);
+    delay(90000);
+  }
 
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
     Serial.println("GOT OBSTACLE!");
