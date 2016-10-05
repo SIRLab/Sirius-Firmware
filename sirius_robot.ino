@@ -68,6 +68,11 @@ unsigned int silverTape[2][3] = {
   { 40, 40, 31 }
 };
 
+unsigned int greenValues[2][3] = {
+  { 63, 63, 63 },
+  { 100, 65, 65 }
+};
+
 unsigned int colorSensors[2][5] = {
   {23, 25, 24, 27, 26},
   {51, 50, 49, 48, 47}
@@ -125,7 +130,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              false
+#define CALIBRATION              true
 
 //--------------------------------------------------
 
@@ -177,7 +182,7 @@ int readUltrasonicDistance(int sensorId) {
   return pulseWidth >= 10200 ? 0 : (pulseWidth / 29 / 2);
 }
 
-void readSensors(boolean d) {
+void readIRSensors(boolean d) {
   boolean debug = d || false;
   for (int i = 0; i < NUM_SENSORS; i++) {
     sensorValues[i] = analogRead(sensorPins[i]);
@@ -186,7 +191,7 @@ void readSensors(boolean d) {
       Serial.print('\t');
     }
   }
-  
+
   if (debug) {
     Serial.println();
     delay(200);
@@ -205,7 +210,6 @@ void readColorSensors(boolean d, int start, int maxIndex) {
   boolean debug = d || false;
   for (int i = start; i < maxIndex; i++) {
     int red = 0, green = 0, blue = 0;
-
     int out = colorSensors[i][OUT];
 
     digitalWrite(colorSensors[i][S2], LOW);
@@ -222,7 +226,7 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     int greenRedDifference = abs(green - red);
     int greenBlueDifference = abs(green - blue);
 
-    if (greenRedDifference < 30 && greenBlueDifference < 20 && green >= red && green >= blue && red > RED_MINIMUM && green > GREEN_MINIMUM && blue > BLUE_MINIMUM) {
+    if (inRange(red, greenValues[i][RED], 15) && inRange(green, greenValues[i][GREEN], 15) && inRange(blue, greenValues[i][BLUE], 15)) {
       Serial.print("GOT GREEN!");
       Serial.println(i);
       gotGreen[i] = true;
@@ -258,7 +262,7 @@ void readColorSensors(boolean d, int start, int maxIndex) {
 }
 
 void readAllSensors() {
-  readSensors(false);
+  readIRSensors(false);
   readColorSensors(false, 0, 2);
 }
 
@@ -343,7 +347,7 @@ void performObstacleEvade() {
 }
 
 void processRescueMode() {
-  
+
 }
 
 void setup() {
@@ -397,14 +401,14 @@ void loop() {
     Serial.println("Choose an option");
     Serial.println(" - (I)R Sensors");
     Serial.println(" - (C)olor Sensors");
-    
+
     while (Serial.available() == 0);
     commandByte = Serial.read();
 
     if (commandByte == 'i' || commandByte == 'I') {
       commandByte = '*';
       while (commandByte != 'x') {
-        readSensors(true);
+        readIRSensors(true);
         if (Serial.available()) {
           commandByte = Serial.read();
         }
@@ -439,23 +443,29 @@ void loop() {
     return;
   }
 
+  // Testing purpose
+  if (Serial.available()) {
+    moveRobot(STOP);
+    delay(99999);
+  }
+
   systemMillis = millis();
 
   if (rescueMode) {
     processRescueMode();
     return;
   }
-  
-  readAllSensors();
-
-  if (isAllWhite() && onSilverTape()) {
-    moveRobot(STOP);
-    delay(90000);
-  }
 
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
     Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
+  }
+
+  readIRSensors(false);
+
+  if (isAllWhite() && onSilverTape()) {
+    moveRobot(STOP);
+    delay(90000);
   }
 
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
@@ -497,7 +507,7 @@ void loop() {
           delay(500);
         }
         while (k2) {
-          readSensors(false);
+          readIRSensors(false);
           if (isBlack(4)) {
             k2 = false;
             k = false;
@@ -547,7 +557,7 @@ void loop() {
           delay(500);
         }
         while (k2) {
-          readSensors(false);
+          readIRSensors(false);
           if (isBlack(1)) {
             k2 = false;
             k = false;
@@ -590,6 +600,11 @@ void loop() {
     }
   } else {
     moveRobot(FRONT);
+  }
+
+  if (digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
+    moveRobot(STOP);
+    delay(99999);
   }
   /**/
 }
