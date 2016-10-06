@@ -130,7 +130,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              true
+#define CALIBRATION              false
 
 //--------------------------------------------------
 
@@ -179,7 +179,7 @@ int readUltrasonicDistance(int sensorId) {
     pulseWidth = pulseIn(echoPin, HIGH);
   }
 
-  return pulseWidth >= 10200 ? 0 : (pulseWidth / 29 / 2);
+  return (pulseWidth >= 10200 ? 0 : pulseWidth / 29 / 2);
 }
 
 void readIRSensors(boolean d) {
@@ -226,23 +226,23 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     int greenRedDifference = abs(green - red);
     int greenBlueDifference = abs(green - blue);
 
-    if (inRange(red, greenValues[i][RED], 15) && inRange(green, greenValues[i][GREEN], 15) && inRange(blue, greenValues[i][BLUE], 15)) {
+    if (inRange(red, greenValues[i][RED], 10) && inRange(green, greenValues[i][GREEN], 10) && inRange(blue, greenValues[i][BLUE], 10)) {
       Serial.print("GOT GREEN!");
       Serial.println(i);
       gotGreen[i] = true;
     } else {
       gotGreen[i] = false;
     }
-
-    if (inRange(red, silverTape[i][RED], 5) && inRange(green, silverTape[i][GREEN], 5) && inRange(blue, silverTape[i][BLUE], 5)) {
-      Serial.print("GOT SILVER TAPE!");
-      Serial.println(i);
-      debug = true;
-      gotSilverTape[i] = true;
-    } else {
-      gotSilverTape[i] = false;
-    }
-
+    /*
+        if (inRange(red, silverTape[i][RED], 5) && inRange(green, silverTape[i][GREEN], 5) && inRange(blue, silverTape[i][BLUE], 5)) {
+          Serial.print("GOT SILVER TAPE!");
+          Serial.println(i);
+          debug = true;
+          gotSilverTape[i] = true;
+        } else {
+          gotSilverTape[i] = false;
+        }
+    */
     if (debug) {
       const char* sName = i == CS_ESQ ? "=== SENSOR ESQ ===" : "=== SENSOR DIR ===";
       //Serial.println(sName);
@@ -346,8 +346,98 @@ void performObstacleEvade() {
   delay(2000);
 }
 
-void processRescueMode() {
+int getMinDistance(int distances[100]) {
+  int minDist = -1;
+  for (int i = 0; i < 100; i++) {
+    if ((distances[i] != 0 && distances[i] < minDist) || minDist < 0) {
+      minDist = distances[i];
+    }
+  }
+  return minDist;
+}
 
+boolean foundBall() {
+  unsigned int distanceUp = readUltrasonicDistance(USSR_UP);
+  delay(10);
+  unsigned int distanceDown = readUltrasonicDistance(USSR_DOWN);
+  Serial.print(distanceUp);
+  Serial.print('\t');
+  Serial.println(distanceDown);
+  int difference = abs(distanceUp - distanceDown);
+  return difference > 30 && distanceDown < 50;
+}
+
+void rescueBall() {
+  moveRobot(STOP);
+  delay(100);
+  moveRobot(FRONT);
+  delay(700);
+  moveRobot(STOP);
+  delay(100);
+
+  unsigned int ballDistance = 100;
+
+  while (ballDistance > 13) {
+    int distances[100];
+    for (int i = 0; i < 50; i++) {
+      moveRobot(RIGHT);
+      distances[i] = readUltrasonicDistance(USSR_DOWN);
+      delay(5);
+    }
+    moveRobot(LEFT);
+    delay(800);
+    for (int i = 50; i < 100; i++) {
+      distances[i] = readUltrasonicDistance(USSR_DOWN);
+      delay(5);
+    }
+
+    unsigned int minDist = getMinDistance(distances);
+
+    moveRobot(RIGHT);
+
+    unsigned int currentDist = 0;
+
+    while (true) {
+      currentDist = readUltrasonicDistance(USSR_DOWN);
+      if (currentDist != 0 && inRange(currentDist, minDist, 1)) {
+        break;
+      }
+      delay(5);
+    }
+
+    moveRobot(FRONT);
+    delay(400);
+    
+    ballDistance = readUltrasonicDistance(USSR_DOWN);
+    Serial.println(ballDistance);
+  }
+
+  moveRobot(STOP);
+  delay(100);
+  moveRobot(LEFT);
+  delay(4800);
+  moveRobot(STOP);
+  delay(500);
+  clawMove(GO_DOWN);
+  delay(1000);
+  moveRobot(BACK);
+  delay(50);
+  clawMove(CLOSE);
+  delay(1000);
+  clawMove(GO_UP);
+  
+  moveRobot(STOP);
+  delay(99999);
+}
+
+void processRescueMode() {
+  moveRobot(LEFT);
+  while (true) {
+    if (foundBall()) {
+      rescueBall();
+    }
+    delay(30);
+  }
 }
 
 void setup() {
@@ -391,6 +481,8 @@ void setup() {
 
   // Initialize the claw position
   clawInit();
+
+  rescueMode = true;
 }
 
 void loop() {
@@ -463,18 +555,17 @@ void loop() {
 
   readIRSensors(false);
 
-  if (isAllWhite() && onSilverTape()) {
-    moveRobot(STOP);
-    delay(90000);
-  }
+  /*
+    if (isAllWhite() && onSilverTape()) {
+      moveRobot(STOP);
+      delay(90000);
+    }*/
 
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
     moveRobot(FRONT);
     return;
   } else if (!needTurnLeft && (got90Right() || needTurnRight)) {
     Serial.println("GOT 90 RIGHT!");
-    boolean k = true;
-    boolean k2 = false;
     moveRobot(FRONT);
     delay(100);
     moveRobot(STOP);
@@ -490,41 +581,29 @@ void loop() {
         Serial.println("Got green Right going to Right!");
       }
     }
-    while (k) {
-      readAllSensors();
-      if (isAllWhite() || needTurnRight) {
-        Serial.println("Need to turn");
-        k2 = true;
-        if (needTurnRight) {
-          moveRobot(RIGHT);
-          delay(1200);
-          moveRobot(FRONT);
-          delay(100);
-        } else {
-          moveRobot(FRONT);
-          delay(100);
-          moveRobot(RIGHT);
-          delay(500);
+    moveRobot(FRONT);
+    delay(300);
+    readAllSensors();
+    if (isAllWhite() || needTurnRight) {
+      Serial.println("Need to turn");
+      moveRobot(RIGHT);
+      delay(1200);
+      moveRobot(FRONT);
+      delay(100);
+      while (true) {
+        readIRSensors(false);
+        if (isBlack(4)) {
+          needTurnLeft = false;
+          needTurnRight = false;
+          break;
         }
-        while (k2) {
-          readIRSensors(false);
-          if (isBlack(4)) {
-            k2 = false;
-            k = false;
-            needTurnLeft = false;
-            needTurnRight = false;
-          }
-        }
-      } else {
-        Serial.println("Continue to front");
       }
-      k = false;
+    } else {
+      Serial.println("Continue to front");
     }
     Serial.println("DONE 90 right!");
   } else if (!needTurnRight && (got90Left() || needTurnLeft)) {
     Serial.println("GOT 90 LEFT!");
-    boolean k = true;
-    boolean k2 = false;
     moveRobot(FRONT);
     delay(100);
     moveRobot(STOP);
@@ -540,35 +619,25 @@ void loop() {
         return;
       }
     }
-    while (k) {
-      readAllSensors();
-      if (isAllWhite() || needTurnLeft) {
-        Serial.println("Need to turn");
-        k2 = true;
-        if (needTurnLeft) {
-          moveRobot(LEFT);
-          delay(1200);
-          moveRobot(FRONT);
-          delay(100);
-        } else {
-          moveRobot(FRONT);
-          delay(100);
-          moveRobot(LEFT);
-          delay(500);
+    moveRobot(FRONT);
+    delay(300);
+    readAllSensors();
+    if (isAllWhite() || needTurnLeft) {
+      Serial.println("Need to turn");
+      moveRobot(LEFT);
+      delay(1200);
+      moveRobot(FRONT);
+      delay(100);
+      while (true) {
+        readIRSensors(false);
+        if (isBlack(1)) {
+          needTurnLeft = false;
+          needTurnRight = false;
+          break;
         }
-        while (k2) {
-          readIRSensors(false);
-          if (isBlack(1)) {
-            k2 = false;
-            k = false;
-            needTurnLeft = false;
-            needTurnRight = false;
-          }
-        }
-      } else {
-        Serial.println("Continue to front");
       }
-      k = false;
+    } else {
+      Serial.println("Continue to front");
     }
     Serial.println("DONE 90 left!");
   }
