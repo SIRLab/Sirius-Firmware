@@ -120,6 +120,8 @@ int moves[2][9] = {
 // Rescue mode
 
 bool rescueMode = false;
+bool found = false;
+bool forceFound = false;
 bool holdingBody = false;
 
 //--------------------------------------------------
@@ -148,7 +150,7 @@ void clawMove(int cMove) {
       clawServos[CLAW].write(0);
       break;
     case GO_UP:
-      clawServos[HEIGHT].write(165);
+      clawServos[HEIGHT].write(170);
       break;
     case GO_DOWN:
       clawServos[HEIGHT].write(60);
@@ -356,7 +358,7 @@ int getMinDistance(int distances[100]) {
   return minDist;
 }
 
-boolean foundBall() {
+int readDoubleUltrassonicDistanceWithFilter() {
   unsigned int distanceUp = readUltrasonicDistance(USSR_UP);
   delay(10);
   unsigned int distanceDown = readUltrasonicDistance(USSR_DOWN);
@@ -364,13 +366,56 @@ boolean foundBall() {
   Serial.print('\t');
   Serial.println(distanceDown);
   int difference = abs(distanceUp - distanceDown);
-  return difference > 30 && distanceDown < 50;
+  return (difference > 30 && distanceDown < 50) ? distanceDown : 0;
 }
 
-void rescueBall() {
+boolean foundBall() {
+  return readDoubleUltrassonicDistanceWithFilter() > 0;
+}
+
+void searchTriangle() {
+  moveRobot(FRONT);
+  while (digitalRead(OBSTC_BUTTON_PIN) == LOW);
+  moveRobot(BACK);
+  delay(1000);
+  moveRobot(LEFT);
+  delay(2400);
+  moveRobot(FRONT);
+  int side = 0;
+  while (true) {
+    if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+      moveRobot(BACK);
+      delay(1000);
+      moveRobot(LEFT);
+      delay(2400);
+      moveRobot(FRONT);
+    }
+    if (digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
+      side = 0;
+      break;
+    } else if (digitalRead(LEFT_BUTTON_PIN) == HIGH) {
+      side = 1;
+      break;
+    }
+  }
+  moveRobot(BACK);
+  delay(1000);
+  moveRobot(side == 0 ? RIGHT : LEFT);
+  delay(4800);
+  moveRobot(BACK);
+  delay(2000);
+  clawMove(OPEN);
+  delay(1500);
+  moveRobot(FRONT);
+  delay(1000);
+}
+
+boolean rescueBall() {
+  bool found = false;
   moveRobot(STOP);
   delay(100);
   moveRobot(FRONT);
+  
   delay(700);
   moveRobot(STOP);
   delay(100);
@@ -385,19 +430,20 @@ void rescueBall() {
       delay(5);
     }
     moveRobot(LEFT);
-    delay(800);
+    delay(700);
     for (int i = 50; i < 100; i++) {
       distances[i] = readUltrasonicDistance(USSR_DOWN);
       delay(5);
     }
 
-    unsigned int minDist = getMinDistance(distances);
-
     moveRobot(RIGHT);
-
+    unsigned int minDist = getMinDistance(distances);
     unsigned int currentDist = 0;
-
+    unsigned int startTime = millis() + 3500;
     while (true) {
+      if (millis() > startTime) {
+        return false;
+      }
       currentDist = readUltrasonicDistance(USSR_DOWN);
       if (currentDist != 0 && inRange(currentDist, minDist, 1)) {
         break;
@@ -405,11 +451,17 @@ void rescueBall() {
       delay(5);
     }
 
+    unsigned int frontTime = millis() + 700;
     moveRobot(FRONT);
-    delay(400);
-    
+    while (millis() < frontTime) {
+      ballDistance = readUltrasonicDistance(USSR_DOWN);
+      if (ballDistance <= 13) {
+        break;
+      }
+      delay(50);
+    }
+
     ballDistance = readUltrasonicDistance(USSR_DOWN);
-    Serial.println(ballDistance);
   }
 
   moveRobot(STOP);
@@ -421,22 +473,65 @@ void rescueBall() {
   clawMove(GO_DOWN);
   delay(1000);
   moveRobot(BACK);
-  delay(50);
+  delay(150);
+  clawMove(GO_DOWN);
   clawMove(CLOSE);
   delay(1000);
-  clawMove(GO_UP);
-  
   moveRobot(STOP);
-  delay(99999);
+  clawMove(GO_UP);
+  delay(1000);
+  moveRobot(LEFT);
+  delay(4800);
+  return true;
 }
 
 void processRescueMode() {
   moveRobot(LEFT);
+  unsigned int startTime = millis() + 2200;
+  found = forceFound;
+  boolean retry = false;
   while (true) {
-    if (foundBall()) {
-      rescueBall();
+    if (!retry && !found && millis() > startTime) {
+      break;
+    }
+    if (foundBall() || forceFound) {
+      forceFound = false;
+      found = true;
+      if (rescueBall()) {
+        searchTriangle();
+      } else {
+        Serial.println("lost the ball, retry");
+        moveRobot(LEFT);
+        retry = true;
+      }
+    } else {
+      found = false;
     }
     delay(30);
+  }
+  if (!found) {
+    moveRobot(RIGHT);
+    delay(2000);
+    startTime = millis() + 2000;
+    moveRobot(FRONT);
+    while (millis() < startTime) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+        moveRobot(BACK);
+        delay(1000);
+        moveRobot(LEFT);
+        delay(2100);
+        moveRobot(FRONT);
+        startTime = millis() + 2000;
+      }
+      if (foundBall()) {
+        Serial.println("a");
+        forceFound = true;
+        break;
+      } else {
+        forceFound = false;
+      }
+      delay(50);
+    }
   }
 }
 
@@ -535,17 +630,17 @@ void loop() {
     return;
   }
 
-  // Testing purpose
-  if (Serial.available()) {
-    moveRobot(STOP);
-    delay(99999);
-  }
-
   systemMillis = millis();
 
   if (rescueMode) {
     processRescueMode();
     return;
+  }
+
+  // Testing purpose
+  if (Serial.available()) {
+    moveRobot(STOP);
+    delay(99999);
   }
 
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
