@@ -73,8 +73,10 @@ unsigned int greenValues[2][3] = {
   { 100, 65, 65 }
 };
 
+// s0=27, s1=29 ,s2=25 ,s3=23 , out=24 ,
+ 
 unsigned int colorSensors[2][5] = {
-  {23, 25, 24, 27, 26},
+  {27, 29, 25, 23, 24},
   {51, 50, 49, 48, 47}
 };
 
@@ -116,13 +118,16 @@ int moves[2][9] = {
   {255, 0, 255, 0, 94 }
 };
 
+const int LEFT_90 = 2200;
+const int RIGHT_90 = 2400;
+
 //--------------------------------------------------
 // Rescue mode
 
 bool rescueMode = false;
 bool found = false;
 bool forceFound = false;
-bool holdingBody = false;
+int rescueSide = FRONT;
 
 //--------------------------------------------------
 // System millis
@@ -132,7 +137,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              false
+#define CALIBRATION              true
 
 //--------------------------------------------------
 
@@ -161,6 +166,10 @@ void clawMove(int cMove) {
 void clawInit() {
   clawMove(OPEN);
   clawMove(GO_UP);
+}
+
+int inverseRescueSide() {
+  return rescueSide == LEFT ? RIGHT : LEFT;
 }
 
 int readUltrasonicDistance(int sensorId) {
@@ -415,19 +424,18 @@ boolean rescueBall() {
   moveRobot(STOP);
   delay(100);
   moveRobot(FRONT);
-  
   delay(700);
   moveRobot(STOP);
   delay(100);
 
   unsigned int ballDistance = 100;
 
-  while (ballDistance > 13) {
+  while (ballDistance > 15) {
     int distances[100];
     for (int i = 0; i < 50; i++) {
       moveRobot(RIGHT);
       distances[i] = readUltrasonicDistance(USSR_DOWN);
-      delay(5);
+      delay(10);
     }
     moveRobot(LEFT);
     delay(700);
@@ -435,7 +443,6 @@ boolean rescueBall() {
       distances[i] = readUltrasonicDistance(USSR_DOWN);
       delay(5);
     }
-
     moveRobot(RIGHT);
     unsigned int minDist = getMinDistance(distances);
     unsigned int currentDist = 0;
@@ -449,19 +456,24 @@ boolean rescueBall() {
         break;
       }
       delay(5);
+      if (foundBall())
+        found = true;
+      delay(5);
+    }
+
+    if (!found) {
+      return false;
     }
 
     unsigned int frontTime = millis() + 700;
     moveRobot(FRONT);
     while (millis() < frontTime) {
       ballDistance = readUltrasonicDistance(USSR_DOWN);
-      if (ballDistance <= 13) {
+      if (ballDistance <= 15) {
         break;
       }
-      delay(50);
+      delay(30);
     }
-
-    ballDistance = readUltrasonicDistance(USSR_DOWN);
   }
 
   moveRobot(STOP);
@@ -473,7 +485,7 @@ boolean rescueBall() {
   clawMove(GO_DOWN);
   delay(1000);
   moveRobot(BACK);
-  delay(150);
+  delay(700);
   clawMove(GO_DOWN);
   clawMove(CLOSE);
   delay(1000);
@@ -486,10 +498,14 @@ boolean rescueBall() {
 }
 
 void processRescueMode() {
-  moveRobot(LEFT);
-  unsigned int startTime = millis() + 2200;
-  found = forceFound;
+  if (rescueSide == FRONT) {
+    // side process...
+    rescueSide = LEFT;
+  }
+  moveRobot(rescueSide);
+  unsigned int startTime = millis() + LEFT_90;
   boolean retry = false;
+  found = forceFound;
   while (true) {
     if (!retry && !found && millis() > startTime) {
       break;
@@ -500,8 +516,7 @@ void processRescueMode() {
       if (rescueBall()) {
         searchTriangle();
       } else {
-        Serial.println("lost the ball, retry");
-        moveRobot(LEFT);
+        moveRobot(rescueSide);
         retry = true;
       }
     } else {
@@ -510,21 +525,22 @@ void processRescueMode() {
     delay(30);
   }
   if (!found) {
-    moveRobot(RIGHT);
-    delay(2000);
+    moveRobot(inverseRescueSide());
+    int delayTo = rescueSide == LEFT ? LEFT_90 : RIGHT_90;
+    int delayToReverse = rescueSide == LEFT ? RIGHT_90  - 400 : LEFT_90;
+    delay(delayToReverse);
     startTime = millis() + 2000;
     moveRobot(FRONT);
     while (millis() < startTime) {
-      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH || digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
         moveRobot(BACK);
         delay(1000);
         moveRobot(LEFT);
-        delay(2100);
+        delay(delayTo);
         moveRobot(FRONT);
         startTime = millis() + 2000;
       }
       if (foundBall()) {
-        Serial.println("a");
         forceFound = true;
         break;
       } else {
