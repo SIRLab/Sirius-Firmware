@@ -890,6 +890,7 @@ void loop() {
       delay(100);
     }
     if (error < -1000) {
+      moveRobot(STOP);
       delay(100);
     }
     if (error < -1200) {
@@ -904,6 +905,7 @@ void loop() {
       delay(100);
     }
     if (error > 1000) {
+      moveRobot(STOP);
       delay(100);
     }
     if (error > 1200) {
