@@ -32,12 +32,13 @@ const int OPEN = 0;
 const int CLOSE = 1;
 const int GO_UP = 2;
 const int GO_DOWN = 3;
+const int INIT_H = 4;
 
 //--------------------------------------------------
 // IR Sensors
 
-#define BLACK_VALUE             600
-#define SILVER_VALUE            300
+#define BLACK_VALUE             800
+#define SILVER_VALUE            700
 #define NUM_SENSORS             6
 
 unsigned int sensorPins[NUM_SENSORS] = { A0, A1, A2, A3, A4, A5 };
@@ -54,7 +55,7 @@ boolean testedOnGap;
 #define GREEN_MINIMUM            70
 #define BLUE_MINIMUM             50
 
-#define RED_MINIMUM_RIGHT            70
+#define RED_MINIMUM_RIGHT            60
 #define GREEN_MINIMUM_RIGHT          30
 #define BLUE_MINIMUM_RIGHT           30
 
@@ -68,7 +69,7 @@ const int S1 = 1;
 const int S2 = 2;
 const int S3 = 3;
 const int OUT = 4;
- 
+
 unsigned int colorSensors[2][5] = {
   {27, 29, 25, 23, 24},
   {51, 50, 49, 48, 47}
@@ -131,7 +132,7 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              false
+#define CALIBRATION              true
 
 //--------------------------------------------------
 
@@ -160,7 +161,10 @@ void clawMove(int cMove) {
       clawServos[HEIGHT].write(170);
       break;
     case GO_DOWN:
-      clawServos[HEIGHT].write(60);
+      clawServos[HEIGHT].write(50);
+      break;
+    case INIT_H:
+      clawServos[HEIGHT].write(130);
       break;
   }
 }
@@ -171,7 +175,7 @@ void clawMove(int cMove) {
 
 void clawInit() {
   clawMove(OPEN);
-  clawMove(GO_UP);
+  clawMove(INIT_H);
 }
 
 //--------------------------------------------------
@@ -391,24 +395,26 @@ boolean onSilverTape() {
 // * Executa a rotina de desvio de obstáculos
 
 void performObstacleEvade() {
+  clawMove(CLOSE);
   moveRobot(BACK);
   delay(700);
+  moveRobot(LEFT);
+  delay(1700);
+  moveRobot(FRONT);
+  delay(2800);
   moveRobot(RIGHT);
   delay(1700);
   moveRobot(FRONT);
-  delay(2400);
-  moveRobot(LEFT);
-  delay(2200);
-  moveRobot(FRONT);
   delay(2500);
-  moveRobot(LEFT);
+  moveRobot(RIGHT);
   delay(400);
   moveRobot(FRONT);
   delay(2500);
-  moveRobot(LEFT);
+  moveRobot(RIGHT);
   delay(2200);
   moveRobot(FRONT);
-  delay(500);
+  delay(200);
+  clawMove(OPEN);
 
   while (true) {
     readIRSensors(false);
@@ -416,13 +422,13 @@ void performObstacleEvade() {
       break;
     }
   }
-  
+
   moveRobot(FRONT);
   delay(500);
-  moveRobot(RIGHT);
+  moveRobot(LEFT);
   delay(1800);
   moveRobot(BACK);
-  delay(1100);
+  delay(1700);
 }
 
 //--------------------------------------------------
@@ -468,20 +474,33 @@ boolean foundBall() {
 
 void searchTriangle() {
   moveRobot(FRONT);
-  while (digitalRead(OBSTC_BUTTON_PIN) == LOW);
-  moveRobot(BACK);
-  delay(1000);
-  moveRobot(LEFT);
-  delay(2400);
-  moveRobot(FRONT);
+  bool jump = false;
   int side = 0;
   while (true) {
     if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
-      moveRobot(BACK);
-      delay(1000);
-      moveRobot(LEFT);
-      delay(2400);
-      moveRobot(FRONT);
+      break;
+    }
+    if (digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
+      side = 0;
+      jump = true;
+      break;
+    }
+    if (digitalRead(LEFT_BUTTON_PIN) == HIGH) {
+      side = 1;
+      jump = true;
+      break;
+    }
+  }
+  if (!jump) {
+    moveRobot(BACK);
+    delay(1000);
+    moveRobot(RIGHT);
+    delay(2400);
+    moveRobot(FRONT);
+  }
+  while (true) {
+    if (jump) {
+      break;
     }
     if (digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
       side = 0;
@@ -489,18 +508,26 @@ void searchTriangle() {
     } else if (digitalRead(LEFT_BUTTON_PIN) == HIGH) {
       side = 1;
       break;
+    } else if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+      moveRobot(BACK);
+      delay(1000);
+      moveRobot(RIGHT);
+      delay(2400);
+      moveRobot(FRONT);
+      break;
     }
   }
   moveRobot(BACK);
   delay(1000);
   moveRobot(side == 0 ? RIGHT : LEFT);
-  delay(4800);
+  delay(4300);
   moveRobot(BACK);
-  delay(2000);
+  delay(3000);
   clawMove(OPEN);
   delay(1500);
   moveRobot(FRONT);
   delay(1000);
+  found = false;
 }
 
 //--------------------------------------------------
@@ -519,8 +546,25 @@ boolean rescueBall() {
   unsigned int ballDistance = 100;
 
   while (ballDistance > 15) {
+    if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+      moveRobot(FRONT);
+      delay(300);
+      moveRobot(BACK);
+      delay(100);
+      moveRobot(RIGHT);
+      delay(RIGHT_90);
+    }
     int distances[100];
     for (int i = 0; i < 50; i++) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+        moveRobot(FRONT);
+        delay(300);
+        moveRobot(BACK);
+        delay(100);
+        moveRobot(RIGHT);
+        delay(RIGHT_90);
+        break;
+      }
       moveRobot(RIGHT);
       distances[i] = readUltrasonicDistance(USSR_DOWN);
       delay(10);
@@ -528,6 +572,15 @@ boolean rescueBall() {
     moveRobot(LEFT);
     delay(700);
     for (int i = 50; i < 100; i++) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+        moveRobot(FRONT);
+        delay(300);
+        moveRobot(BACK);
+        delay(100);
+        moveRobot(RIGHT);
+        delay(RIGHT_90);
+        break;
+      }
       distances[i] = readUltrasonicDistance(USSR_DOWN);
       delay(5);
     }
@@ -536,14 +589,18 @@ boolean rescueBall() {
     unsigned int currentDist = 0;
     unsigned int startTime = millis() + 3500;
     while (true) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
+        moveRobot(FRONT);
+        delay(300);
+        moveRobot(BACK);
+        delay(100);
+        moveRobot(RIGHT);
+        delay(RIGHT_90);
+      }
       if (millis() > startTime) {
         return false;
       }
       currentDist = readUltrasonicDistance(USSR_DOWN);
-      Serial.print("Min distance: ");
-      Serial.println(minDist);
-      Serial.print('\t');
-      Serial.println(currentDist);
       if (currentDist != 0 && inRange(currentDist, minDist, 2)) {
         break;
       }
@@ -571,13 +628,13 @@ boolean rescueBall() {
   moveRobot(STOP);
   delay(100);
   moveRobot(LEFT);
-  delay(4800);
+  delay(4400);
   moveRobot(STOP);
   delay(500);
   clawMove(GO_DOWN);
   delay(1000);
   moveRobot(BACK);
-  delay(700);
+  delay(2000);
   clawMove(GO_DOWN);
   clawMove(CLOSE);
   delay(1000);
@@ -585,13 +642,13 @@ boolean rescueBall() {
   clawMove(GO_UP);
   delay(1000);
   moveRobot(LEFT);
-  delay(4800);
+  delay(4000);
   return true;
 }
 
 //--------------------------------------------------
 // * processRescueMode
-// 
+//
 
 void processRescueMode() {
   moveRobot(RIGHT);
@@ -607,6 +664,8 @@ void processRescueMode() {
       found = true;
       if (rescueBall()) {
         searchTriangle();
+        retry = false;
+        return;
       } else {
         moveRobot(RIGHT);
         retry = true;
@@ -661,7 +720,7 @@ void setup() {
     pinMode(colorSensors[i][S3],      OUTPUT);
     pinMode(colorSensors[i][OUT],     INPUT);
     digitalWrite(colorSensors[i][S0], HIGH);
-    
+
     digitalWrite(colorSensors[i][S1], LOW);
   }
 
@@ -688,9 +747,9 @@ void setup() {
 
 void loop() {
   /*
-  moveRobot(FRONT);
-  return;
-  /**/
+    moveRobot(FRONT);
+    return;
+    /**/
   if (CALIBRATION) {
     char commandByte = '*';
 
@@ -746,7 +805,7 @@ void loop() {
     processRescueMode();
     return;
   }
-  
+
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
     Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
@@ -769,13 +828,16 @@ void loop() {
     }
     if (count >= 2) {
       moveRobot(FRONT);
-      delay(2500);
+      delay(3500);
       moveRobot(STOP);
       rescueMode = true;
       return;
+    } else {
+      moveRobot(BACK);
+      delay(50);
     }
   }
-  
+
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
     moveRobot(FRONT);
     return;
@@ -805,7 +867,7 @@ void loop() {
         k2 = true;
         if (needTurnRight) {
           moveRobot(RIGHT);
-          delay(1200);
+          delay(1500);
           moveRobot(FRONT);
           delay(100);
         } else {
@@ -855,7 +917,7 @@ void loop() {
         k2 = true;
         if (needTurnLeft) {
           moveRobot(LEFT);
-          delay(1200);
+          delay(1500);
           moveRobot(FRONT);
           delay(100);
         } else {
@@ -882,7 +944,7 @@ void loop() {
   }
 
   int position = calculatePosition();
-  int error = position - 3000;
+  int error = position - 2500;
 
   if (error < -700) {
     moveRobot(LEFT);
@@ -890,7 +952,6 @@ void loop() {
       delay(100);
     }
     if (error < -1000) {
-      moveRobot(STOP);
       delay(100);
     }
     if (error < -1200) {
@@ -905,7 +966,6 @@ void loop() {
       delay(100);
     }
     if (error > 1000) {
-      moveRobot(STOP);
       delay(100);
     }
     if (error > 1200) {
