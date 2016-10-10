@@ -36,21 +36,27 @@ const int GO_DOWN = 3;
 //--------------------------------------------------
 // IR Sensors
 
-#define BLACK_VALUE             500
+#define BLACK_VALUE             600
+#define SILVER_VALUE            300
 #define NUM_SENSORS             6
 
 unsigned int sensorPins[NUM_SENSORS] = { A0, A1, A2, A3, A4, A5 };
 unsigned int sensorValues[NUM_SENSORS];
 long sensorLastPositionValue = 0;
+boolean testedOnGap;
 
 //--------------------------------------------------
 // Color sensors
 
 #define USE_COLOR_SENSORS        true
 
-#define RED_MINIMUM              50
-#define GREEN_MINIMUM            45
-#define BLUE_MINIMUM             40
+#define RED_MINIMUM              80
+#define GREEN_MINIMUM            70
+#define BLUE_MINIMUM             50
+
+#define RED_MINIMUM_RIGHT            70
+#define GREEN_MINIMUM_RIGHT          30
+#define BLUE_MINIMUM_RIGHT           30
 
 const int RED = 0;
 const int GREEN = 1;
@@ -62,18 +68,6 @@ const int S1 = 1;
 const int S2 = 2;
 const int S3 = 3;
 const int OUT = 4;
-
-unsigned int silverTape[2][3] = {
-  { 34, 44, 34 },
-  { 40, 40, 31 }
-};
-
-unsigned int greenValues[2][3] = {
-  { 63, 63, 63 },
-  { 100, 65, 65 }
-};
-
-// s0=27, s1=29 ,s2=25 ,s3=23 , out=24 ,
  
 unsigned int colorSensors[2][5] = {
   {27, 29, 25, 23, 24},
@@ -98,7 +92,7 @@ const int OBSTC_BUTTON_PIN = 5;
 const int USSR_UP = 0;
 const int USSR_DOWN = 1;
 
-const int ULTRA_SR_TRIG_PIN = 42;
+const int ULTRA_SR_TRIG_PIN = 40;
 const int ULTRA_SR_ECHO_PIN = 38;
 
 const int ULTRA_SR_UP_TRIG_PIN = 31;
@@ -112,6 +106,7 @@ const int BACK = 1;
 const int LEFT = 2;
 const int RIGHT = 3;
 const int STOP = 4;
+const int SLOW = 5;
 
 int moves[2][9] = {
   {0, 255, 255, 0, 100 },
@@ -127,7 +122,6 @@ const int RIGHT_90 = 2400;
 bool rescueMode = false;
 bool found = false;
 bool forceFound = false;
-int rescueSide = FRONT;
 
 //--------------------------------------------------
 // System millis
@@ -137,14 +131,22 @@ unsigned long systemMillis = 0;
 //--------------------------------------------------
 // Calibration
 
-#define CALIBRATION              true
+#define CALIBRATION              false
 
 //--------------------------------------------------
+
+//--------------------------------------------------
+// * moveRobot
+// * Manda um pulso PWM para cada servo dependendo do moveId
 
 void moveRobot(int moveId) {
   servos[SV_LEFT].write(moves[SV_LEFT][moveId]);
   servos[SV_RIGHT].write(moves[SV_RIGHT][moveId]);
 }
+
+//--------------------------------------------------
+// * clawMove
+// * Manda um pulso PWM para cada servo da garra dependendo do cMove
 
 void clawMove(int cMove) {
   switch (cMove) {
@@ -163,14 +165,18 @@ void clawMove(int cMove) {
   }
 }
 
+//--------------------------------------------------
+// * clawInit
+// * Move a garra para as posições iniciais
+
 void clawInit() {
   clawMove(OPEN);
   clawMove(GO_UP);
 }
 
-int inverseRescueSide() {
-  return rescueSide == LEFT ? RIGHT : LEFT;
-}
+//--------------------------------------------------
+// * readUltrasonicDistance
+// * Retorna a distância de um sensor ultrasonico (dependendo do sensorId) em centímetros aproximados
 
 int readUltrasonicDistance(int sensorId) {
   unsigned long pulseWidth = 0;
@@ -193,10 +199,17 @@ int readUltrasonicDistance(int sensorId) {
   return (pulseWidth >= 10200 ? 0 : pulseWidth / 29 / 2);
 }
 
+//--------------------------------------------------
+// * readIRSensors
+// * Executa a leitura de todos os sensores infravermelhos e guarda seus respectivos valores em um array para uso posterior
+
 void readIRSensors(boolean d) {
   boolean debug = d || false;
   for (int i = 0; i < NUM_SENSORS; i++) {
     sensorValues[i] = analogRead(sensorPins[i]);
+    if (sensorValues[i] > BLACK_VALUE && testedOnGap) {
+      testedOnGap = false;
+    }
     if (debug) {
       Serial.print(sensorValues[i]);
       Serial.print('\t');
@@ -210,9 +223,17 @@ void readIRSensors(boolean d) {
   /**/
 }
 
+//--------------------------------------------------
+// * inRange
+// * Retorna true caso o "value" estiver igual ao "equalsTo" considerando uma margem "margin" tanto para cima quanto para baixo
+
 boolean inRange(int value, int equalsTo, int margin) {
   return equalsTo >= (value - margin) && (value + margin) >= equalsTo;
 }
+
+//--------------------------------------------------
+// * readColorSensors
+// * Executa a leitura dos sensores de cor, o sucesso na detecção do verde é guardado em um array para uso posterior
 
 void readColorSensors(boolean d, int start, int maxIndex) {
   if (!USE_COLOR_SENSORS) {
@@ -233,27 +254,18 @@ void readColorSensors(boolean d, int start, int maxIndex) {
     digitalWrite(colorSensors[i][S2], HIGH);
     green = pulseIn(out, digitalRead(out) == HIGH ? LOW : HIGH);
 
-    int redGreenDifference = red - green;
-    int greenRedDifference = abs(green - red);
-    int greenBlueDifference = abs(green - blue);
+    int redMinimum = i == CS_DIR ? RED_MINIMUM_RIGHT : RED_MINIMUM;
+    int greenMinimum = i == CS_DIR ? GREEN_MINIMUM_RIGHT : GREEN_MINIMUM;
+    int blueMinimum = i == CS_DIR ? BLUE_MINIMUM_RIGHT : BLUE_MINIMUM;
 
-    if (inRange(red, greenValues[i][RED], 10) && inRange(green, greenValues[i][GREEN], 10) && inRange(blue, greenValues[i][BLUE], 10)) {
+    if (red > green && red > blue && red > redMinimum && green > greenMinimum && blue > blueMinimum) {
       Serial.print("GOT GREEN!");
       Serial.println(i);
       gotGreen[i] = true;
     } else {
       gotGreen[i] = false;
     }
-    /*
-        if (inRange(red, silverTape[i][RED], 5) && inRange(green, silverTape[i][GREEN], 5) && inRange(blue, silverTape[i][BLUE], 5)) {
-          Serial.print("GOT SILVER TAPE!");
-          Serial.println(i);
-          debug = true;
-          gotSilverTape[i] = true;
-        } else {
-          gotSilverTape[i] = false;
-        }
-    */
+
     if (debug) {
       const char* sName = i == CS_ESQ ? "=== SENSOR ESQ ===" : "=== SENSOR DIR ===";
       //Serial.println(sName);
@@ -262,20 +274,25 @@ void readColorSensors(boolean d, int start, int maxIndex) {
       Serial.print(" G: ");
       Serial.print(green, DEC);
       Serial.print(" B: ");
-      Serial.print(blue, DEC);
-      Serial.print('\t');
-      Serial.print("Red & Green Difference: ");
-      Serial.println(redGreenDifference, DEC);
+      Serial.println(blue, DEC);
       delay(100);
     }
   }
   /**/
 }
 
+//--------------------------------------------------
+// * readAllSensors
+// * Executa a leitura de todos os sensores IR e sensores de cor
+
 void readAllSensors() {
   readIRSensors(false);
   readColorSensors(false, 0, 2);
 }
+
+//--------------------------------------------------
+// * calculatePosition
+// * Retorna a posição do robô na linha com base nos valores dos sensores IR
 
 int calculatePosition() {
   boolean onLine = false;
@@ -307,55 +324,110 @@ int calculatePosition() {
   return sensorLastPositionValue;
 }
 
+//--------------------------------------------------
+// * isBlack
+// * Retorna true caso o sensor de index "sensorIndex" esteja com um valor acima do calibrado para o preto
+
 boolean isBlack(int sensorIndex) {
   return sensorValues[sensorIndex] > BLACK_VALUE;
 }
+
+//--------------------------------------------------
+// * isCenterBlack
+// * Retorna true caso o módulo da posição menos o erro seja maior do que 1000
 
 boolean isCenterBlack() {
   int error = calculatePosition() - 2500;
   return error > -1000 && error < 1000;
 }
 
+//--------------------------------------------------
+// * got90Right
+// * Retorna true caso os sensores da direita estejam detectando preto
+
 boolean got90Right() {
   return isBlack(3) && isBlack(4) && isBlack(5);
 }
+
+//--------------------------------------------------
+// * got90Left
+// * Retorna true caso os sensores da esquerda estejam detectando preto
 
 boolean got90Left() {
   return isBlack(0) && isBlack(1) && isBlack(2);
 }
 
+//--------------------------------------------------
+// * isAllBlack
+// * Retorna true caso todos os sensores IR estejam retornando preto
+
 boolean isAllBlack() {
   return isBlack(0) && isBlack(1) && isBlack(2) && isBlack(3) && isBlack(4) && isBlack(5);
 }
+
+//--------------------------------------------------
+// * isAllWhite
+// * Retorna true caso todos os sensores IR não estejam retornando preto
 
 boolean isAllWhite() {
   return !isBlack(0) && !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5);
 }
 
+//--------------------------------------------------
+// * onSilverTape
+// * Retorna true caso ambos os sensores de cor detectaram a fita prateada
+
 boolean onSilverTape() {
-  return gotSilverTape[0] && gotSilverTape[1];
+  int count = 0;
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    if (sensorValues[i] >= SILVER_VALUE)
+      count++;
+  }
+  return count == NUM_SENSORS;
 }
+
+//--------------------------------------------------
+// * performObstacleEvade
+// * Executa a rotina de desvio de obstáculos
 
 void performObstacleEvade() {
   moveRobot(BACK);
-  delay(500);
+  delay(700);
   moveRobot(RIGHT);
-  delay(2100);
-  moveRobot(FRONT);
   delay(1700);
-  moveRobot(LEFT);
+  moveRobot(FRONT);
   delay(2400);
-  moveRobot(FRONT);
-  delay(4500);
   moveRobot(LEFT);
-  delay(2100);
+  delay(2200);
   moveRobot(FRONT);
-  delay(2000);
+  delay(2500);
+  moveRobot(LEFT);
+  delay(400);
+  moveRobot(FRONT);
+  delay(2500);
+  moveRobot(LEFT);
+  delay(2200);
+  moveRobot(FRONT);
+  delay(500);
+
+  while (true) {
+    readIRSensors(false);
+    if (isBlack(2) && isBlack(3)) {
+      break;
+    }
+  }
+  
+  moveRobot(FRONT);
+  delay(500);
   moveRobot(RIGHT);
   delay(1800);
   moveRobot(BACK);
-  delay(2000);
+  delay(1100);
 }
+
+//--------------------------------------------------
+// * getMinDistance
+// * Retorna o menor valor dentro de um array (de tamanho 100) de inteiros.
 
 int getMinDistance(int distances[100]) {
   int minDist = -1;
@@ -366,6 +438,10 @@ int getMinDistance(int distances[100]) {
   }
   return minDist;
 }
+
+//--------------------------------------------------
+// * readDoubleUltrassonicDistanceWithFilter
+// * Lê os dois valores de ambos os sensores ultrasonicos e retorna true caso ambos os dados tenham passado pelo filtro
 
 int readDoubleUltrassonicDistanceWithFilter() {
   unsigned int distanceUp = readUltrasonicDistance(USSR_UP);
@@ -378,9 +454,17 @@ int readDoubleUltrassonicDistanceWithFilter() {
   return (difference > 30 && distanceDown < 50) ? distanceDown : 0;
 }
 
+//--------------------------------------------------
+// * foundBall
+// * Retorna true caso o valor retornado pela função chamada seja maior que zero
+
 boolean foundBall() {
   return readDoubleUltrassonicDistanceWithFilter() > 0;
 }
+
+//--------------------------------------------------
+// * searchTriangle
+// * Executa a rotina de busca pelo triângulo
 
 void searchTriangle() {
   moveRobot(FRONT);
@@ -419,6 +503,10 @@ void searchTriangle() {
   delay(1000);
 }
 
+//--------------------------------------------------
+// * rescueBall
+// * Executa a rotina de resgate em um alvo já encontrado. Retorna true caso a rotina seja executada com sucesso.
+
 boolean rescueBall() {
   bool found = false;
   moveRobot(STOP);
@@ -452,13 +540,17 @@ boolean rescueBall() {
         return false;
       }
       currentDist = readUltrasonicDistance(USSR_DOWN);
-      if (currentDist != 0 && inRange(currentDist, minDist, 1)) {
+      Serial.print("Min distance: ");
+      Serial.println(minDist);
+      Serial.print('\t');
+      Serial.println(currentDist);
+      if (currentDist != 0 && inRange(currentDist, minDist, 2)) {
         break;
       }
-      delay(5);
+      delay(10);
       if (foundBall())
         found = true;
-      delay(5);
+      delay(10);
     }
 
     if (!found) {
@@ -497,13 +589,13 @@ boolean rescueBall() {
   return true;
 }
 
+//--------------------------------------------------
+// * processRescueMode
+// 
+
 void processRescueMode() {
-  if (rescueSide == FRONT) {
-    // side process...
-    rescueSide = LEFT;
-  }
-  moveRobot(rescueSide);
-  unsigned int startTime = millis() + LEFT_90;
+  moveRobot(RIGHT);
+  unsigned int startTime = millis() + RIGHT_90;
   boolean retry = false;
   found = forceFound;
   while (true) {
@@ -516,8 +608,9 @@ void processRescueMode() {
       if (rescueBall()) {
         searchTriangle();
       } else {
-        moveRobot(rescueSide);
+        moveRobot(RIGHT);
         retry = true;
+        found = false;
       }
     } else {
       found = false;
@@ -525,18 +618,16 @@ void processRescueMode() {
     delay(30);
   }
   if (!found) {
-    moveRobot(inverseRescueSide());
-    int delayTo = rescueSide == LEFT ? LEFT_90 : RIGHT_90;
-    int delayToReverse = rescueSide == LEFT ? RIGHT_90  - 400 : LEFT_90;
-    delay(delayToReverse);
+    moveRobot(LEFT);
+    delay(LEFT_90);
     startTime = millis() + 2000;
     moveRobot(FRONT);
     while (millis() < startTime) {
-      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH || digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
+      if (digitalRead(OBSTC_BUTTON_PIN) == HIGH || digitalRead(LEFT_BUTTON_PIN) == HIGH) {
         moveRobot(BACK);
         delay(1000);
-        moveRobot(LEFT);
-        delay(delayTo);
+        moveRobot(RIGHT);
+        delay(RIGHT_90);
         moveRobot(FRONT);
         startTime = millis() + 2000;
       }
@@ -570,6 +661,7 @@ void setup() {
     pinMode(colorSensors[i][S3],      OUTPUT);
     pinMode(colorSensors[i][OUT],     INPUT);
     digitalWrite(colorSensors[i][S0], HIGH);
+    
     digitalWrite(colorSensors[i][S1], LOW);
   }
 
@@ -592,11 +684,13 @@ void setup() {
 
   // Initialize the claw position
   clawInit();
-
-  rescueMode = true;
 }
 
 void loop() {
+  /*
+  moveRobot(FRONT);
+  return;
+  /**/
   if (CALIBRATION) {
     char commandByte = '*';
 
@@ -652,13 +746,7 @@ void loop() {
     processRescueMode();
     return;
   }
-
-  // Testing purpose
-  if (Serial.available()) {
-    moveRobot(STOP);
-    delay(99999);
-  }
-
+  
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
     Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
@@ -666,17 +754,35 @@ void loop() {
 
   readIRSensors(false);
 
-  /*
-    if (isAllWhite() && onSilverTape()) {
+  if (isAllWhite() && !testedOnGap) {
+    Serial.println("aaa");
+    testedOnGap = true;
+    moveRobot(FRONT);
+    delay(50);
+    moveRobot(STOP);
+    readIRSensors(true);
+    int count = 0;
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      if (inRange(sensorValues[i], SILVER_VALUE, 200)) {
+        count++;
+      }
+    }
+    if (count >= 2) {
+      moveRobot(FRONT);
+      delay(2500);
       moveRobot(STOP);
-      delay(90000);
-    }*/
-
+      rescueMode = true;
+      return;
+    }
+  }
+  
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
     moveRobot(FRONT);
     return;
   } else if (!needTurnLeft && (got90Right() || needTurnRight)) {
     Serial.println("GOT 90 RIGHT!");
+    boolean k = true;
+    boolean k2 = false;
     moveRobot(FRONT);
     delay(100);
     moveRobot(STOP);
@@ -692,29 +798,41 @@ void loop() {
         Serial.println("Got green Right going to Right!");
       }
     }
-    moveRobot(FRONT);
-    delay(300);
-    readAllSensors();
-    if (isAllWhite() || needTurnRight) {
-      Serial.println("Need to turn");
-      moveRobot(RIGHT);
-      delay(1200);
-      moveRobot(FRONT);
-      delay(100);
-      while (true) {
-        readIRSensors(false);
-        if (isBlack(4)) {
-          needTurnLeft = false;
-          needTurnRight = false;
-          break;
+    while (k) {
+      readIRSensors(false);
+      if (isAllWhite() || needTurnRight) {
+        Serial.println("Need to turn");
+        k2 = true;
+        if (needTurnRight) {
+          moveRobot(RIGHT);
+          delay(1200);
+          moveRobot(FRONT);
+          delay(100);
+        } else {
+          moveRobot(FRONT);
+          delay(100);
+          moveRobot(RIGHT);
+          delay(500);
         }
+        while (k2) {
+          readIRSensors(false);
+          if (isBlack(4)) {
+            k2 = false;
+            k = false;
+            needTurnLeft = false;
+            needTurnRight = false;
+          }
+        }
+      } else {
+        Serial.println("Continue to front");
       }
-    } else {
-      Serial.println("Continue to front");
+      k = false;
     }
     Serial.println("DONE 90 right!");
   } else if (!needTurnRight && (got90Left() || needTurnLeft)) {
     Serial.println("GOT 90 LEFT!");
+    boolean k = true;
+    boolean k2 = false;
     moveRobot(FRONT);
     delay(100);
     moveRobot(STOP);
@@ -730,61 +848,72 @@ void loop() {
         return;
       }
     }
-    moveRobot(FRONT);
-    delay(300);
-    readAllSensors();
-    if (isAllWhite() || needTurnLeft) {
-      Serial.println("Need to turn");
-      moveRobot(LEFT);
-      delay(1200);
-      moveRobot(FRONT);
-      delay(100);
-      while (true) {
-        readIRSensors(false);
-        if (isBlack(1)) {
-          needTurnLeft = false;
-          needTurnRight = false;
-          break;
+    while (k) {
+      readIRSensors(false);
+      if (isAllWhite() || needTurnLeft) {
+        Serial.println("Need to turn");
+        k2 = true;
+        if (needTurnLeft) {
+          moveRobot(LEFT);
+          delay(1200);
+          moveRobot(FRONT);
+          delay(100);
+        } else {
+          moveRobot(FRONT);
+          delay(100);
+          moveRobot(LEFT);
+          delay(500);
         }
+        while (k2) {
+          readIRSensors(false);
+          if (isBlack(1)) {
+            k2 = false;
+            k = false;
+            needTurnLeft = false;
+            needTurnRight = false;
+          }
+        }
+      } else {
+        Serial.println("Continue to front");
       }
-    } else {
-      Serial.println("Continue to front");
+      k = false;
     }
     Serial.println("DONE 90 left!");
   }
 
   int position = calculatePosition();
-  int error = position - 2500;
+  int error = position - 3000;
 
   if (error < -700) {
     moveRobot(LEFT);
     if (error < -900) {
-      delay(30);
+      delay(100);
     }
     if (error < -1000) {
-      delay(40);
+      delay(100);
     }
     if (error < -1200) {
-      delay(50);
+      delay(120);
+    }
+    if (error < -1300) {
+      delay(150);
     }
   } else if (error > 700) {
     moveRobot(RIGHT);
     if (error > 900) {
-      delay(30);
+      delay(100);
     }
     if (error > 1000) {
-      delay(40);
+      delay(100);
     }
     if (error > 1200) {
-      delay(50);
+      delay(120);
+    }
+    if (error > 1300) {
+      delay(150);
     }
   } else {
     moveRobot(FRONT);
-  }
-
-  if (digitalRead(RIGHT_BUTTON_PIN) == HIGH) {
-    moveRobot(STOP);
-    delay(99999);
   }
   /**/
 }
