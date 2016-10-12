@@ -1,10 +1,15 @@
 #include <Servo.h>
 
 /*
-  Sirius
-  Robô projetado para superar os desafios da OBR 2016
-  ATENÇÃO: o código não está finalizado e foi descontinuado
-  https://github.com/rafaelalmeidatk
+ * Sirius
+ * ----------------------------------------
+ * Robô projetado para superar os desafoios da OBR 2016
+ * ATENÇÃO: o código não está finalizado e foi descontinuado
+ * ----------------------------------------
+ * Robot designed to solve OBR 2016 objectives
+ * WARNING: the following code isn't finished and has been discontinued
+ * ----------------------------------------
+ * Author: https://github.com/rafaelalmeidatk
 */
 
 //--------------------------------------------------
@@ -46,7 +51,6 @@ unsigned int sensorPins[NUM_SENSORS] = { A0, A1, A2, A3, A4, A5 };
 unsigned int sensorValues[NUM_SENSORS];
 long sensorLastPositionValue = 0;
 boolean testedOnGap;
-unsigned int timeOnWhite;
 
 //--------------------------------------------------
 // Color sensors
@@ -224,10 +228,6 @@ void readIRSensors(boolean d) {
       Serial.print(sensorValues[i]);
       Serial.print('\t');
     }
-  }
-
-  if (count > 0) {
-    timeOnWhite = millis() + 1500;
   }
 
   if (debug) {
@@ -719,6 +719,10 @@ void processRescueMode() {
   }
 }
 
+//--------------------------------------------------
+// * setup
+// * Inicialização do robô
+
 void setup() {
   Serial.begin(9600);
 
@@ -761,15 +765,13 @@ void setup() {
 
   // Initialize the claw position
   clawInit();
-
-  timeOnWhite = millis() + 2000;
 }
 
+//--------------------------------------------------
+// * loop
+// * Loop principal
+
 void loop() {
-  /*
-    moveRobot(FRONT);
-    return;
-    /**/
   if (CALIBRATION) {
     char commandByte = '*';
 
@@ -833,8 +835,7 @@ void loop() {
 
   readIRSensors(false);
 
-  if (false && isAllWhite() && !testedOnGap) {
-    Serial.println("aaa");
+  if (isAllWhite() && !testedOnGap) {
     testedOnGap = true;
     moveRobot(FRONT);
     delay(30);
