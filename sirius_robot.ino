@@ -115,7 +115,6 @@ const int BACK = 1;
 const int LEFT = 2;
 const int RIGHT = 3;
 const int STOP = 4;
-const int SLOW = 5;
 
 int moves[2][9] = {
   {0, 255, 255, 0, 100 },
@@ -215,26 +214,17 @@ int readUltrasonicDistance(int sensorId) {
 // * readIRSensors
 // * Executa a leitura de todos os sensores infravermelhos e guarda seus respectivos valores em um array para uso posterior
 
-void readIRSensors(boolean d) {
-  boolean debug = d || false;
-  unsigned int count = 0;
+void readIRSensors(boolean debug) {
   for (int i = 0; i < NUM_SENSORS; i++) {
     sensorValues[i] = analogRead(sensorPins[i]);
     if (sensorValues[i] > BLACK_VALUE) {
       testedOnGap = false;
-      count++;
     }
     if (debug) {
       Serial.print(sensorValues[i]);
       Serial.print('\t');
     }
   }
-
-  if (debug) {
-    Serial.println();
-    delay(200);
-  }
-  /**/
 }
 
 //--------------------------------------------------
@@ -249,11 +239,10 @@ boolean inRange(int value, int equalsTo, int margin) {
 // * readColorSensors
 // * Executa a leitura dos sensores de cor, o sucesso na detecção do verde é guardado em um array para uso posterior
 
-void readColorSensors(boolean d, int start, int maxIndex) {
+void readColorSensors(boolean debug, int start, int maxIndex) {
   if (!USE_COLOR_SENSORS) {
     return;
   }
-  boolean debug = d || false;
   for (int i = start; i < maxIndex; i++) {
     int red = 0, green = 0, blue = 0;
     int out = colorSensors[i][OUT];
