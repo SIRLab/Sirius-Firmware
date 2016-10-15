@@ -132,12 +132,9 @@ bool found = false;
 bool forceFound = false;
 
 //--------------------------------------------------
-// System millis
-
-unsigned long systemMillis = 0;
-
-//--------------------------------------------------
 // Calibration
+// Mudar o valor para true irá ativar o modo de calibração
+// Uso através do Serial Monitor
 
 #define CALIBRATION              false
 
@@ -271,8 +268,6 @@ void readColorSensors(boolean debug, int start, int maxIndex) {
     }
 
     if (debug) {
-      const char* sName = i == CS_ESQ ? "=== SENSOR ESQ ===" : "=== SENSOR DIR ===";
-      //Serial.println(sName);
       Serial.print("R: ");
       Serial.print(red, DEC);
       Serial.print(" G: ");
@@ -378,23 +373,6 @@ boolean isAllBlack() {
 
 boolean isAllWhite() {
   return !isBlack(0) && !isBlack(1) && !isBlack(2) && !isBlack(3) && !isBlack(4) && !isBlack(5);
-}
-
-boolean isAnyBlack() {
-  return isBlack(0) || isBlack(1) || isBlack(2) || isBlack(3) || isBlack(4) || isBlack(5);
-}
-
-//--------------------------------------------------
-// * onSilverTape
-// * Retorna true caso ambos os sensores de cor detectaram a fita prateada
-
-boolean onSilverTape() {
-  int count = 0;
-  for (int i = 0; i < NUM_SENSORS; i++) {
-    if (sensorValues[i] >= SILVER_VALUE)
-      count++;
-  }
-  return count == NUM_SENSORS;
 }
 
 //--------------------------------------------------
@@ -655,7 +633,7 @@ boolean rescueBall() {
 
 //--------------------------------------------------
 // * processRescueMode
-//
+// * Executa a rotina de procura das vítimas
 
 void processRescueMode() {
   moveRobot(RIGHT);
@@ -761,6 +739,7 @@ void setup() {
 // * Loop principal
 
 void loop() {
+  // Calibração
   if (CALIBRATION) {
     char commandByte = '*';
 
@@ -810,20 +789,21 @@ void loop() {
     return;
   }
 
-  systemMillis = millis();
-
+  // Se estiver no modo de resgate, executa a rotina e ignora o resto do código
   if (rescueMode) {
     processRescueMode();
     return;
   }
 
+  // Caso o botão do obstáculo seja acionado, executa a rotina de desvio
   if (digitalRead(OBSTC_BUTTON_PIN) == HIGH) {
-    Serial.println("GOT OBSTACLE!");
     performObstacleEvade();
   }
 
+  // Executa uma leitura dos sensores infravermelhos
   readIRSensors(false);
 
+  // Um possível gap foi encontrado, verifica se é uma fita prateada (para início do modo de resgate)
   if (isAllWhite() && !testedOnGap) {
     testedOnGap = true;
     moveRobot(FRONT);
@@ -848,9 +828,11 @@ void loop() {
     }
   }
 
+  // Caso esteja tudo preto ou tudo branco e não há a necessidade de virar para um dos lados, siga em frente
   if ((isAllWhite() || isAllBlack()) && (!needTurnLeft && !needTurnRight)) {
     moveRobot(FRONT);
     return;
+  // Se não precisa ir para a esquerda e foi detectado um ângulo de 90º 
   } else if (!needTurnLeft && (got90Right() || needTurnRight)) {
     Serial.println("GOT 90 RIGHT!");
     boolean k = true;
